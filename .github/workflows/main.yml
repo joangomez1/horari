@@ -2,13 +2,8 @@ name: PVCat Automation Bot
 
 on:
   schedule:
-    # Entrada 10:00 Spain Time (09:00 UTC)
-    - cron: '0 9 * * 1-4'
-    
-    # Sortida 17:00 Spain Time (16:00 UTC)
-    - cron: '0 16 * * 1-4'
-    
-  workflow_dispatch: # Allows manual trigger from the GitHub Actions tab
+    - cron: "*/5 * * * 1-5"   # cada 5 minuts, dilluns-divendres
+  workflow_dispatch:
 
 jobs:
   punch-clock:
@@ -26,9 +21,48 @@ jobs:
         run: |
           pip install selenium webdriver-manager
 
-      - name: Execute punch-clock script
+      - name: Check time in Spain and decide action
+        id: timecheck
+        run: |
+          HOUR=$(TZ="Europe/Madrid" date +'%H')
+          MIN=$(TZ="Europe/Madrid" date +'%M')
+          TODAY=$(TZ="Europe/Madrid" date +'%Y-%m-%d')
+
+          echo "Ara són: $HOUR:$MIN"
+
+          # Fitxer temporal per evitar duplicats
+          FILE="/tmp/time_tracking_$TODAY"
+
+          if [ "$HOUR" = "10" ] && [ "$MIN" -lt "10" ]; then
+            if [ ! -f "$FILE-entrada" ]; then
+              echo "entrada" > "$FILE-entrada"
+              echo "action=entrada" >> $GITHUB_OUTPUT
+            else
+              echo "action=none" >> $GITHUB_OUTPUT
+            fi
+
+          elif [ "$HOUR" = "17" ] && [ "$MIN" -lt "10" ]; then
+            if [ ! -f "$FILE-sortida" ]; then
+              echo "sortida" > "$FILE-sortida"
+              echo "action=sortida" >> $GITHUB_OUTPUT
+            else
+              echo "action=none" >> $GITHUB_OUTPUT
+            fi
+
+          else
+            echo "action=none" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Execute punch-clock script for entry
+        if: steps.timecheck.outputs.action == 'entrada'
         env:
-          # Make sure to set these in Settings > Secrets and variables > Actions
           USER_PVCAT: ${{ secrets.USER_PVCAT }}
           PASS_PVCAT: ${{ secrets.PASS_PVCAT }}
-        run: python fichar.py
+        run: python fichar.py entrada
+
+      - name: Execute punch-clock script for exit
+        if: steps.timecheck.outputs.action == 'sortida'
+        env:
+          USER_PVCAT: ${{ secrets.USER_PVCAT }}
+          PASS_PVCAT: ${{ secrets.PASS_PVCAT }}
+        run: python fichar.py sortida
